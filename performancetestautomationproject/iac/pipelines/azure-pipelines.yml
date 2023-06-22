@@ -1,0 +1,412 @@
+# This is build Pipeline and Deployment yml script for PerformanceTestAutomationProject.
+# # Node.js React Web App to Linux on Azure
+# Build a Node.js React app and deploy it to Azure as a Linux web app.
+# Add steps that analyze code, save build artifacts, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/javascript
+
+trigger:
+  batch: true
+  branches:
+    include:
+      - develop
+      - master
+      - feature/Pipeline_123
+
+schedules:
+- cron: "0 22 * * *"
+  displayName: Daily midnight build
+  branches:
+    include:
+    - feature/Pipeline_123 
+  always: true
+
+# based on pull the request
+pr:
+  #autoCancel: true
+  branches:
+    include:
+      - develop
+
+variables:
+
+  - name: ImageName
+    value: "temporal-client"
+
+  # Agent VM image name
+  - name: vmImageName
+    value: "ubuntu-latest"
+
+  - name: pullrequestvariable
+    value: "true"
+
+  - name: buildPlatform
+    value: "Any CPU"
+
+  - name: buildConfiguration
+    value: "Release"
+
+  - name: buildVersion
+    value: $(GitVersion.MajorMinorPatch)
+
+  - name: isDevelop
+    value: $[eq(variables['Build.SourceBranch'], 'refs/heads/develop')] 
+
+  # Tagging for Master and Other Branches(Dev/PR)
+  - name: tag
+    ${{ if eq(variables['Build.SourceBranchName'], 'master') }}: 
+      value: "$(MajorMinorPatch)" 
+    ${{ if ne(variables['Build.SourceBranchName'], 'master') }}: 
+      value: "$(MajorMinorPatch)-preview-$(Build.BuildId)" 
+  
+stages:
+  - stage: BuildPushImage
+    displayName: Build stage
+    jobs:
+      - job: Build
+        displayName: Build
+        pool:
+          vmImage: $(vmImageName)
+
+        steps:
+          # List environment variables and values
+            - powershell: |
+                Write-Host "This is from power shell command task"
+                Write-Host "This writes out the env vars"
+                get-childitem -path env:*
+              displayName: "PowerShell script to write out env vars"
+
+###################################################################################################
+
+            - task: JMeterInstaller@0
+              displayName: 'Install JMeter 5.2.1'
+              inputs:
+                 jmeterVersion: '5.2.1'
+              #continueOnError: true
+
+            - task: UsePythonVersion@0
+              displayName: 'Use Python'
+              inputs:
+                versionSpec: '3'
+                addToPath: true
+                architecture: 'x64'
+
+            - task: CmdLine@2
+              displayName: 'Check pre-requisite to install Taurus'
+              inputs:
+                script: |
+                    pip install --upgrade wheel setuptools Cython
+                    pip install bzt
+                    pip install --upgrade bzt
+
+            - task: TaurusInstaller@0
+              inputs:
+                taurusVersion: '1.15.3'
+                pythonCommand: 'python3'
+
+#========================================================================================================
+
+            - task: TaurusRunner@0
+              displayName: 'Files_5'
+              inputs:
+                taurusConfig: |
+                  execution:
+                  - scenario:
+                      script: $(BUILD.SOURCESDIRECTORY)/src/jmxFiles/Files_5.jmx
+                    #concurrency: 5
+                    #iterations: 10
+                    #ramp-up: 2s          
+                    
+                  reporting:
+                  - module: junit-xml
+                    filename: Files_5.xml
+
+                jmeterHome: '$(JMeterInstaller.JMeterHome)'
+                jmeterPath: '$(JMeterInstaller.JMeterPath)'
+                jmeterVersion: '$(JMeterInstaller.JMeterVersion)'
+                outputDir: 'taurus-output-files'
+
+            - task: PublishTestResults@2
+              displayName: 'Test Report'
+              condition: succeededOrFailed()
+              inputs:
+                testResultsFormat: 'JUnit'
+                testResultsFiles: '**/Files_5.xml'
+                mergeTestResults: true
+                testRunTitle: 'Files_5 test report'
+
+            - task: PublishBuildArtifacts@1
+              displayName: 'Publish Artifact'
+              inputs:
+                pathtoPublish: '$(BUILD.SOURCESDIRECTORY)/taurus-output-files/report' 
+                artifactName: 'Files'
+
+#==============================================================================================================
+
+            - task: TaurusRunner@0
+              displayName: 'MyInfoCompanysetup'
+              inputs:
+                taurusConfig: |
+                  execution:
+                  - scenario:
+                      script: $(BUILD.SOURCESDIRECTORY)/src/jmxFiles/MyInfoCompanysetup.jmx
+
+                  reporting:
+                  - module: junit-xml
+                    filename: MyInfoCompanysetup.xml
+
+                jmeterHome: '$(JMeterInstaller.JMeterHome)'
+                jmeterPath: '$(JMeterInstaller.JMeterPath)'
+                jmeterVersion: '$(JMeterInstaller.JMeterVersion)'
+                outputDir: 'taurus-output-MyInfoCompanysetup'
+
+            - task: PublishTestResults@2
+              displayName: 'Test Report'
+              condition: succeededOrFailed()
+              inputs:
+                testResultsFormat: 'JUnit'
+                testResultsFiles: '**/MyInfoCompanysetup.xml'
+                mergeTestResults: true
+                testRunTitle: 'MyInfoCompanysetup test report'
+
+            - task: PublishBuildArtifacts@1
+              displayName: 'Publish Artifact'
+              inputs:
+                pathtoPublish: '$(BUILD.SOURCESDIRECTORY)/taurus-output-MyInfoCompanysetup/report' 
+                artifactName: 'MyInfoCompanysetup Report'
+
+#========================================================================================================
+
+            - task: TaurusRunner@0
+              displayName: 'SHIFT_SMOKE'
+              inputs:
+                taurusConfig: |
+                  execution:
+                  - scenario:
+                      script: $(BUILD.SOURCESDIRECTORY)/src/jmxFiles/SHIFT_SMOKE_PERFORMANCE_TESTING.jmx
+
+                  reporting:
+                  - module: junit-xml
+                    filename: SHIFT_SMOKE.xml
+
+                jmeterHome: '$(JMeterInstaller.JMeterHome)'
+                jmeterPath: '$(JMeterInstaller.JMeterPath)'
+                jmeterVersion: '$(JMeterInstaller.JMeterVersion)'
+                outputDir: 'taurus-output-SHIFT_SMOKE'
+
+            - task: PublishTestResults@2
+              displayName: 'Test Report'
+              condition: succeededOrFailed()
+              inputs:
+                testResultsFormat: 'JUnit'
+                testResultsFiles: '**/SHIFT_SMOKE.xml'
+                mergeTestResults: true
+                testRunTitle: 'SHIFT_SMOKE test report'
+
+            - task: PublishBuildArtifacts@1
+              displayName: 'Publish Artifact'
+              inputs:
+                pathtoPublish: '$(BUILD.SOURCESDIRECTORY)/taurus-output-SHIFT_SMOKE/report' 
+                artifactName: 'SHIFT_SMOKE Report'
+
+#========================================================================================================
+
+            - task: TaurusRunner@0
+              displayName: 'Global_search'
+              inputs:
+                taurusConfig: |
+                  execution:
+                  - scenario:
+                      script: $(BUILD.SOURCESDIRECTORY)/src/jmxFiles/Global_search_performance1.jmx
+
+                  reporting:
+                  - module: junit-xml
+                    filename: Global_search.xml
+
+                jmeterHome: '$(JMeterInstaller.JMeterHome)'
+                jmeterPath: '$(JMeterInstaller.JMeterPath)'
+                jmeterVersion: '$(JMeterInstaller.JMeterVersion)'
+                outputDir: 'taurus-output-Global_search'
+
+            - task: PublishTestResults@2
+              displayName: 'Test Report'
+              condition: succeededOrFailed()
+              inputs:
+                testResultsFormat: 'JUnit'
+                testResultsFiles: '**/Global_search.xml'
+                mergeTestResults: true
+                testRunTitle: 'Global_search test report'
+
+            - task: PublishBuildArtifacts@1
+              displayName: 'Publish Artifact'
+              inputs:
+                pathtoPublish: '$(BUILD.SOURCESDIRECTORY)/taurus-output-Global_search/report' 
+                artifactName: 'Global_search Report'
+
+#========================================================================================================
+
+            - task: TaurusRunner@0
+              displayName: 'ATtendance'
+              inputs:
+                taurusConfig: |
+                  execution:
+                  - scenario:
+                      script: $(BUILD.SOURCESDIRECTORY)/src/jmxFiles/ATtendance-module-performance-testing_People_Info_My_Info.jmx
+
+                  reporting:
+                  - module: junit-xml
+                    filename: ATtendance.xml
+
+                jmeterHome: '$(JMeterInstaller.JMeterHome)'
+                jmeterPath: '$(JMeterInstaller.JMeterPath)'
+                jmeterVersion: '$(JMeterInstaller.JMeterVersion)'
+                outputDir: 'taurus-output-ATtendance'
+
+            - task: PublishTestResults@2
+              displayName: 'Test Report'
+              condition: succeededOrFailed()
+              inputs:
+                testResultsFormat: 'JUnit'
+                testResultsFiles: '**/ATtendance.xml'
+                mergeTestResults: true
+                testRunTitle: 'ATtendance test report'
+
+            - task: PublishBuildArtifacts@1
+              displayName: 'Publish Artifact'
+              inputs:
+                pathtoPublish: '$(BUILD.SOURCESDIRECTORY)/taurus-output-ATtendance/report' 
+                artifactName: 'ATtendance Report'
+
+#========================================================================================================
+
+            - task: TaurusRunner@0
+              displayName: 'Leave'
+              inputs:
+                taurusConfig: |
+                  execution:
+                  - scenario:
+                      script: $(BUILD.SOURCESDIRECTORY)/src/jmxFiles/Leave_Weeekly_Off_Holidays_Settings.jmx
+
+                  reporting:
+                  - module: junit-xml
+                    filename: Leave_Settings.xml
+
+                jmeterHome: '$(JMeterInstaller.JMeterHome)'
+                jmeterPath: '$(JMeterInstaller.JMeterPath)'
+                jmeterVersion: '$(JMeterInstaller.JMeterVersion)'
+                outputDir: 'taurus-output-leave'
+
+            - task: PublishTestResults@2
+              displayName: 'Test Report'
+              condition: succeededOrFailed()
+              inputs:
+                testResultsFormat: 'JUnit'
+                testResultsFiles: '**/Leave_Settings.xml'
+                mergeTestResults: true
+                testRunTitle: 'Leave test report'
+
+            - task: PublishBuildArtifacts@1
+              displayName: 'Publish Artifact'
+              inputs:
+                pathtoPublish: '$(BUILD.SOURCESDIRECTORY)/taurus-output-leave/report' 
+                artifactName: 'Leave Report'
+
+#========================================================================================================
+
+            - task: TaurusRunner@0
+              displayName: 'Payroll'
+              inputs:
+                taurusConfig: |
+                  execution:
+                  - scenario:
+                      script: $(BUILD.SOURCESDIRECTORY)/src/jmxFiles/Payroll_and_Finalization_Pages.jmx
+
+                  reporting:
+                  - module: junit-xml
+                    filename: Payroll.xml
+
+                jmeterHome: '$(JMeterInstaller.JMeterHome)'
+                jmeterPath: '$(JMeterInstaller.JMeterPath)'
+                jmeterVersion: '$(JMeterInstaller.JMeterVersion)'
+                outputDir: 'taurus-output-payroll'
+
+            - task: PublishTestResults@2
+              displayName: 'Test Report'
+              condition: succeededOrFailed()
+              inputs:
+                testResultsFormat: 'JUnit'
+                testResultsFiles: '**/Payroll.xml'
+                mergeTestResults: true
+                testRunTitle: 'Payroll test report'
+
+            - task: PublishBuildArtifacts@1
+              displayName: 'Publish Artifact'
+              inputs:
+                pathtoPublish: '$(BUILD.SOURCESDIRECTORY)/taurus-output-payroll/report' 
+                artifactName: 'Payroll Report'
+#########################################################################################################################
+
+            #- script: 'jmeter -n -t Files_5.jmx -l result2.jtl -e -o reports'
+            #  workingDirectory: '$(BUILD.SOURCESDIRECTORY)/src/jmxFiles'
+            #  #workingDirectory: '$(Pipeline.Workspace)/drop/apache-jmeter-5.5/jmx_files'
+            #  displayName: 'Command Line Script'
+
+#################################################[BLAZEMETER REPORTS]#########################################################################
+
+            - task: CmdLine@2
+              displayName: 'Files report'
+              inputs:
+                script: bzt Files_5.jmx -report
+                workingDirectory: '$(BUILD.SOURCESDIRECTORY)/src/jmxFiles'
+
+            - task: CmdLine@2
+              displayName: 'ATtendance report'
+              inputs:
+                script: bzt ATtendance-module-performance-testing_People_Info_My_Info.jmx -report
+                workingDirectory: '$(BUILD.SOURCESDIRECTORY)/src/jmxFiles'
+
+            - task: CmdLine@2
+              displayName: 'Global_search report'
+              inputs:
+                script: bzt Global_search_performance1.jmx -report
+                workingDirectory: '$(BUILD.SOURCESDIRECTORY)/src/jmxFiles'
+
+            - task: CmdLine@2
+              displayName: 'MyInfoCompanysetup report'
+              inputs:
+                script: bzt MyInfoCompanysetup.jmx -report
+                workingDirectory: '$(BUILD.SOURCESDIRECTORY)/src/jmxFiles'
+
+            - task: CmdLine@2
+              displayName: 'SHIFT report'
+              inputs:
+                script: bzt SHIFT_SMOKE_PERFORMANCE_TESTING.jmx -report
+                workingDirectory: '$(BUILD.SOURCESDIRECTORY)/src/jmxFiles'
+
+            - task: CmdLine@2
+              displayName: 'Leave report'
+              inputs:
+                script: bzt Leave_Weeekly_Off_Holidays_Settings.jmx -report
+                workingDirectory: '$(BUILD.SOURCESDIRECTORY)/src/jmxFiles'
+
+            - task: CmdLine@2
+              displayName: 'Payroll report'
+              inputs:
+                script: bzt Payroll_and_Finalization_Pages.jmx -report
+                workingDirectory: '$(BUILD.SOURCESDIRECTORY)/src/jmxFiles'                
+#========================================================================================================
+
+            - task: CmdLine@2
+              displayName: 'DIR'
+              condition: succeededOrFailed()
+              inputs:
+                script: |
+                    echo '=================(BUILD.SOURCESDIRECTORY)======================='
+                    dir $(BUILD.SOURCESDIRECTORY)
+                    #echo '=============(BUILD.SOURCESDIRECTORY)/taurus-output============='
+                    #dir $(BUILD.SOURCESDIRECTORY)/taurus-output  
+                    #echo '=========(BUILD.SOURCESDIRECTORY)/taurus-output/report=========='
+                    #dir $(BUILD.SOURCESDIRECTORY)/taurus-output/report
+                    #echo '=========(BUILD.SOURCESDIRECTORY)/src/jmxFiles/reports=========='
+                    #dir $(BUILD.SOURCESDIRECTORY)/src/jmxFiles/reports
+
+
